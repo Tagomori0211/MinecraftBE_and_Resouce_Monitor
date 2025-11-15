@@ -1,0 +1,65 @@
+# docker-compose.yml (This file is an example of Infrastructure as Code)
+version: '3.8'
+
+services:
+  # Database Service
+  db:
+    container_name: db-postgres
+    image: postgres:13
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: minecraft_resources
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Persistent data storage
+    # ports: # Not exposed to host by default, only internal Docker network
+    #   - "5432:5432" 
+
+  # Python Data Parser & Ingestion Service (Runs on-demand)
+  parser:
+    container_name: python-parser
+    build:
+      context: ./parser # Path to parser's Dockerfile
+      dockerfile: Dockerfile_parser
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/minecraft_resources
+      FLASK_ENV: development # Example for Flask env
+    volumes:
+      - ./minecraft_backups:/app/minecraft_backups # Mount host backup directory
+    depends_on:
+      - db
+    # command: python parse_and_ingest.py # This is usually run via CI/CD or cron, not as a constantly running service
+
+  # Flask API Service (Behind Nginx)
+  app:
+    container_name: app-gunicorn
+    build:
+      context: ./app # Path to Flask app's Dockerfile
+      dockerfile: Dockerfile_app
+    restart: unless-stopped
+    command: gunicorn --config gunicorn_config.py app:app # Entrypoint for Gunicorn
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/minecraft_resources
+      FLASK_APP_SECRET_KEY: your_secret_key_here
+    depends_on:
+      - db
+
+  # Nginx Reverse Proxy & Static File Server
+  nginx:
+    container_name: web-nginx
+    build:
+      context: ./nginx # Path to Nginx Dockerfile (incl. Nginx config & frontend static files)
+      dockerfile: Dockerfile_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80" # Expose web server to host's port 80
+      # - "443:443" # For HTTPS (requires SSL setup)
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d # Mount Nginx configuration
+      - ./nginx/frontend:/var/www/html # Mount static frontend files
+    depends_on:
+      - app # Ensure Flask app is running before Nginx starts proxying
+
+volumes:
+  postgres_data: # Define named volume for PostgreSQL data persistence

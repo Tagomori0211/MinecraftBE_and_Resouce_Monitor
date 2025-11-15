@@ -1,0 +1,51 @@
+system_name: Minecraft_Bedrock_Resource_Dashboard
+goal: >
+  Learn SQL, Docker, CI/CD, Python Flask, Nginx, and JavaScript
+  by visualizing Minecraft BE server resource status.
+
+infrastructure:
+  virtual_machines:
+    - name: dev_ops_vm
+      role: Main operational VM (CI/CD, Docker Host, Web Server, DB Server)
+      os: Linux (e.g., Ubuntu Server)
+      description: >
+        Hosts all Docker containers (parser, DB, API, Nginx) and runs CI/CD pipelines.
+        Also acts as the SCP server to receive Minecraft backups.
+    - name: mcbe_server_vm
+      role: Minecraft Bedrock Edition Server
+      os: Linux (e.g., Ubuntu Server)
+      description: >
+        Runs the Minecraft BE server. Creates periodic world backups and transfers them
+        via SCP to the dev_ops_vm.
+
+ci_cd_workflow:
+  trigger:
+    - code_commit: Push to Git repository (for application code updates)
+    - scp_reception: New Minecraft backup file received on dev_ops_vm (for data ingestion)
+  pipeline_steps:
+    - build_docker_images: For parser, app, nginx containers.
+    - run_unit_tests: For Python application.
+    - run_integration_tests: (Optional) Test API against a temporary DB.
+    - push_to_registry: Docker images to Container Registry.
+    - deploy_containers: Update/restart containers on dev_ops_vm using Docker Compose.
+    - trigger_data_ingestion: Execute python-parser container to process new backup.
+
+data_flow:
+  - from: mcbe_server_vm (backup)
+    to: dev_ops_vm (via SCP)
+    trigger: SCP reception
+  - from: dev_ops_vm (python-parser container)
+    to: dev_ops_vm (db-postgres container)
+    trigger: Data ingestion pipeline
+  - from: dev_ops_vm (web-nginx container)
+    to: User Browser
+    data_type: Static assets (HTML, CSS, JS)
+  - from: User Browser
+    to: dev_ops_vm (web-nginx -> app-gunicorn containers)
+    data_type: API requests (JSON)
+  - from: dev_ops_vm (app-gunicorn container)
+    to: dev_ops_vm (db-postgres container)
+    data_type: DB queries
+  - from: dev_ops_vm (app-gunicorn container)
+    to: User Browser
+    data_type: API responses (JSON)

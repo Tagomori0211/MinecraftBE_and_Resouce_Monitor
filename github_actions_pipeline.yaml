@@ -1,0 +1,37 @@
+# .github/workflows/main.yml (Example of Infrastructure as Code for CI/CD)
+name: Deploy Minecraft Dashboard
+
+on:
+  push:
+    branches:
+      - main
+  # Allow manual trigger and webhook for SCP reception
+  workflow_dispatch: 
+  repository_dispatch: # For triggering by external events (e.g., SCP webhook)
+    types: [new-minecraft-backup]
+
+jobs:
+  build_and_deploy:
+    runs_on: [self-hosted, dev-ops-vm] # Use self-hosted runner on your dev_ops_vm
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Build and push Docker images
+      run: |
+        docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+        docker-compose build --no-cache
+        docker-compose push db parser app nginx
+
+    - name: Deploy containers on VM
+      run: |
+        docker-compose pull db parser app nginx
+        docker-compose up -d --remove-orphans # Deploy services
+        # Optional: Clean up old Docker images if space is an issue
+
+    - name: Trigger data ingestion (if new backup received)
+      if: github.event_name == 'repository_dispatch' && github.event.action == 'new-minecraft-backup'
+      run: |
+        docker-compose run --rm parser python /app/parse_and_ingest.py # Execute parser
+        # Assuming parse_and_ingest.py handles finding the latest backup and processes it
