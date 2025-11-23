@@ -1,37 +1,44 @@
-# .github/workflows/main.yml (Example of Infrastructure as Code for CI/CD)
-name: Deploy Minecraft Dashboard
+name: Deploy Minecraft Dashboard (Hybrid On-Premise)
 
 on:
   push:
     branches:
       - main
-  # Allow manual trigger and webhook for SCP reception
-  workflow_dispatch: 
-  repository_dispatch: # For triggering by external events (e.g., SCP webhook)
+  repository_dispatch:
     types: [new-minecraft-backup]
 
 jobs:
-  build_and_deploy:
-    runs_on: [self-hosted, dev-ops-vm] # Use self-hosted runner on your dev_ops_vm
+  deploy_on_premise:
+    # ここで自宅サーバーのランナーを指定！
+    runs_on: [self-hosted, Linux] 
 
     steps:
+    # 1. 自宅サーバー内にコードを持​​ってくる
     - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Build and push Docker images
+    # 2. 環境変数のセットアップ (.envファイルを作成)
+    # GitHubの Secrets に登録したパスワードなどを、サーバー内の .env ファイルに書き出す
+    - name: Create .env file
       run: |
-        docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
-        docker-compose build --no-cache
-        docker-compose push db parser app nginx
+        echo "POSTGRES_USER=${{ secrets.POSTGRES_USER }}" >> .env
+        echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> .env
+        echo "POSTGRES_DB=${{ secrets.POSTGRES_DB }}" >> .env
+        # その他の環境変数も必要ならここに追加
 
-    - name: Deploy containers on VM
+    # 3. Docker Compose でビルド & 起動 (全部ローカルで完結！)
+    # レジストリへのPush/Pull時間をゼロにする「ローカルビルド戦略」
+    - name: Build and Deploy locally
       run: |
-        docker-compose pull db parser app nginx
-        docker-compose up -d --remove-orphans # Deploy services
-        # Optional: Clean up old Docker images if space is an issue
+        # キャッシュを効かせずに再ビルドして起動
+        docker-compose up -d --build --remove-orphans
+        
+        # 古いイメージのお掃除 (ディスク圧迫防止)
+        docker image prune -f
 
-    - name: Trigger data ingestion (if new backup received)
+    # 4. データ取り込み処理 (バックアップ検知時のみ)
+    - name: Trigger data ingestion
       if: github.event_name == 'repository_dispatch' && github.event.action == 'new-minecraft-backup'
       run: |
-        docker-compose run --rm parser python /app/parse_and_ingest.py # Execute parser
-        # Assuming parse_and_ingest.py handles finding the latest backup and processes it
+        # Parserコンテナを一回だけ実行して終了する
+        docker-compose run --rm parser python /app/parse_and_ingest.py
