@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mc-bedrock-svc
+spec:
+  type: NodePort
+  selector:
+    app: minecraft-bedrock
+  ports:
+    - name: bedrock-udp
+      protocol: UDP
+      port: 19132
+      targetPort: 19132
+      nodePort: 30000
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mc-bedrock
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: minecraft-bedrock
+  template:
+    metadata:
+      labels:
+        app: minecraft-bedrock
+    spec:
+      hostNetwork: true # ポート30000問題回避のため貫通モード推奨！
+      containers:
+        - name: minecraft
+          image: itzg/minecraft-bedrock-server:latest
+          tty: true
+          stdin: true
+          resources:
+            requests:
+              memory: "1Gi"
+            limits:
+              memory: "4Gi"
+          env:
+            - name: EULA
+              value: "TRUE"
+            - name: ENABLE_RCON
+              value: "true"
+            - name: RCON_PASSWORD
+              value: "minecraft"
+          volumeMounts:
+            - name: data-volume
+              mountPath: /data
+      volumes:
+        - name: data-volume
+          hostPath:  # 👈 ここ重要！
+            path: /data/minecraft # さっき作った場所
+            type: Directory
