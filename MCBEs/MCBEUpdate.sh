@@ -31,7 +31,7 @@ if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ]; then
     echo "📢 Sending chat notification..."
     
     # 20秒前の通知
-    kubectl exec $POD_NAME -- rcon-cli say "§e[System] §cNew Update Detected!"
+    kubectl exec $POD_NAME -- rcon-cli say "§e[System] §cアップデートを検知しました!"
     kubectl exec $POD_NAME -- rcon-cli say "§e[System] §fServer will restart in §b20 seconds§f."
     
     sleep 10
@@ -42,7 +42,7 @@ if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ]; then
     sleep 10
     
     # 直前の通知
-    kubectl exec $POD_NAME -- rcon-cli say "§e[System] §cServer is restarting NOW. Back in ~1 min."
+    kubectl exec $POD_NAME -- rcon-cli say "§e[System] §cサーバーは約1-2分後に再接続可能となります"
     
     # 4. 安全な停止と再起動
     # rollout restart を叩くと、k8sは自動で「新しいPod作成 -> 古いPod停止」を行う

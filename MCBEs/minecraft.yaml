@@ -1,3 +1,21 @@
+# ---------------------------------------------------------
+# 1. PersistentVolumeClaim (データの保存場所)
+# ---------------------------------------------------------
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mc-bedrock-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi # 余裕を持って10GB
+
+---
+# ---------------------------------------------------------
+# 2. Service (外部への公開設定)
+# ---------------------------------------------------------
 apiVersion: v1
 kind: Service
 metadata:
@@ -9,11 +27,15 @@ spec:
   ports:
     - name: bedrock-udp
       protocol: UDP
-      port: 19132
-      targetPort: 19132
-      nodePort: 30000
+      # [IMPORTANT_DEV] 既存サーバー(19132)との衝突回避のため、開発中は19133にズラす
+      port: 19133        
+      targetPort: 19133  # コンテナ側の 19133 に転送！
+      nodePort: 30000    # 外部公開ポート (ルーター設定用)
 
 ---
+# ---------------------------------------------------------
+# 3. Deployment (サーバー本体の設定)
+# ---------------------------------------------------------
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -30,29 +52,55 @@ spec:
       labels:
         app: minecraft-bedrock
     spec:
+      # 【修正】hostNetwork: true は削除しました！
+      # これにより、純粋なk8sネットワーク内で動作し、NodePortが有効になります。
+      
       containers:
         - name: minecraft
           image: itzg/minecraft-bedrock-server:latest
-	  imagePullPolicy: Always
+          imagePullPolicy: Always
           tty: true
           stdin: true
+          
+          # 【重要】コンテナ側のポート設定
+          ports:
+            - containerPort: 19133 # [DEV] ServiceのtargetPortと一致させる
+              protocol: UDP
+              name: bedrock-udp
+            - containerPort: 4711  # RCON用
+              protocol: TCP
+              name: rcon-tcp
+
           resources:
             requests:
               memory: "1Gi"
             limits:
               memory: "4Gi"
+          
           env:
             - name: EULA
               value: "TRUE"
+            
+            # 【重要】マイクラ本体に「19133で起動せよ」と命令
+            - name: SERVER_PORT
+              value: "19133"
+            - name: SERVER_PORT_V6
+              value: "19133"
+
+            # RCON設定 (自動アプデスクリプト用)
             - name: ENABLE_RCON
               value: "true"
             - name: RCON_PASSWORD
               value: "minecraft"
+
+          # データマウント設定
           volumeMounts:
             - name: data-volume
               mountPath: /data
+      
+      # ボリュームの定義 (HostPathでオンプレミスのデータを直接参照)
       volumes:
         - name: data-volume
-          hostPath:  # 👈 ここ重要！
-            path: /data/minecraft # さっき作った場所
+          hostPath:
+            path: /data/minecraft
             type: Directory
