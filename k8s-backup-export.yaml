@@ -1,0 +1,100 @@
+# ---------------------------------------------------------
+# 1. ConfigMap: 設定値 (Environment Variables)
+# ---------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-config
+  namespace: default
+data:
+  # 環境に合わせてここだけ変えればOK！
+  TARGET_IP: "192.168.0.10"        # VM1 (DevOps) のIP
+  TARGET_USER: "tagomori"          # SSHユーザー
+  TARGET_DIR: "/minecraft_backups" #転送先ディレクトリ
+
+---
+# ---------------------------------------------------------
+# 2. ConfigMap: スクリプト本体 (Logic)
+# ---------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-script
+  namespace: default
+data:
+  backup.sh: |
+    #!/bin/sh
+    set -e # エラーが出たら即停止
+
+    echo "🔧 Setting up SSH..."
+    mkdir -p ~/.ssh
+    cp /etc/secret-volume/id_rsa ~/.ssh/id_rsa
+    chmod 600 ~/.ssh/id_rsa
+    echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+    echo "📦 Compressing data..."
+    # 日付入りファイル名生成
+    FILENAME="world_backup_$(date +%Y%m%d-%H%M).tar.gz"
+    
+    # /data 配下を圧縮 (/tmpにて作業)
+    tar -czf /tmp/$FILENAME -C /data .
+
+    echo "🚚 Transferring to ${TARGET_USER}@${TARGET_IP}:${TARGET_DIR} ..."
+    
+    # 環境変数を使って転送
+    scp -i ~/.ssh/id_rsa /tmp/$FILENAME ${TARGET_USER}@${TARGET_IP}:${TARGET_DIR}/$FILENAME
+
+    echo "✅ Backup job finished successfully!"
+
+---
+# ---------------------------------------------------------
+# 3. CronJob: 実行定義 (Execution)
+# ---------------------------------------------------------
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-exporter
+  namespace: default
+spec:
+  schedule: "0 5 * * *" # 毎日 05:00
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: backup-worker
+              image: alpine:latest
+              command: ["/bin/sh", "/scripts/backup.sh"] # マウントしたスクリプトを実行
+              
+              # 【重要】ConfigMapから環境変数を一括注入
+              envFrom:
+                - configMapRef:
+                    name: backup-config
+              
+              volumeMounts:
+                - name: data-volume
+                  mountPath: /data
+                  readOnly: true
+                - name: ssh-key-volume
+                  mountPath: /etc/secret-volume
+                  readOnly: true
+                - name: script-volume
+                  mountPath: /scripts
+                  readOnly: true
+
+          volumes:
+            - name: data-volume
+              hostPath:
+                path: /data/minecraft
+                type: Directory
+            - name: ssh-key-volume
+              secret:
+                secretName: ssh-key-secret
+            - name: script-volume
+              configMap:
+                name: backup-script
+                defaultMode: 0755 # 実行権限を付与
+
+          restartPolicy: OnFailure
