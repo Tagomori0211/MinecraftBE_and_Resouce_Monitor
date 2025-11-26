@@ -14,10 +14,25 @@ resource "proxmox_vm_qemu" "devops_vm" {
   scsihw  = "virtio-scsi-pci"
   bootdisk = "scsi0"
 
+  # 【修正】vga設定 (これはOK)
+  vga {
+    type = "std"
+  }
+
+  # 【削除】cloudinit_cdrom_storage = "local-lvm" は消す！
+
+  # 【追加】Cloud-Initドライブを disk ブロックとして定義！
   disk {
-    slot     = "scsi0"      # 【修正】0 -> "scsi0"
+    slot    = "ide2"
+    type    = "cloudinit"
+    storage = "local-lvm"
+  }
+
+  # メインディスク
+  disk {
+    slot     = "scsi0"
     size     = "32G"
-    type     = "disk"       # 【修正】"scsi" -> "disk"
+    type     = "disk"
     storage  = "local-lvm"
     iothread = true
   }
@@ -53,10 +68,23 @@ resource "proxmox_vm_qemu" "mcbe_server_vm" {
   scsihw  = "virtio-scsi-pci"
   bootdisk = "scsi0"
 
+  # 【修正】vga設定
+  vga {
+    type = "std"
+  }
+
+  # 【追加】Cloud-Initドライブ
   disk {
-    slot     = "scsi0"      # 【修正】0 -> "scsi0"
+    slot    = "ide2"
+    type    = "cloudinit"
+    storage = "local-lvm"
+  }
+
+  # メインディスク
+  disk {
+    slot     = "scsi0"
     size     = "50G"
-    type     = "disk"       # 【修正】"scsi" -> "disk"
+    type     = "disk"
     storage  = "local-lvm"
     iothread = true
   }
