@@ -54,14 +54,14 @@ spec:
     spec:
       # 【修正】hostNetwork: true は削除しました！
       # これにより、純粋なk8sネットワーク内で動作し、NodePortが有効になります。
-      
+
       containers:
         - name: minecraft
           image: itzg/minecraft-bedrock-server:latest
           imagePullPolicy: Always
           tty: true
           stdin: true
-          
+
           # 【重要】コンテナ側のポート設定
           ports:
             - # IPv4用ポート (メイン)
@@ -88,7 +88,7 @@ spec:
             
             # 【重要】マイクラ本体に「19133で起動せよ」と命令
             - name: SERVER_PORT
-              value: "19133"
+              value: "19134"
 
             # RCON設定 (自動アプデスクリプト用)
             - name: ENABLE_RCON
