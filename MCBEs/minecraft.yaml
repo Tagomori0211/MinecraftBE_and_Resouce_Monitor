@@ -28,8 +28,8 @@ spec:
     - name: bedrock-udp
       protocol: UDP
       # [IMPORTANT_DEV] 既存サーバー(19132)との衝突回避のため、開発中は19133にズラす
-      port: 19133        
-      targetPort: 19133  # コンテナ側の 19133 に転送！
+      port: 19134
+      targetPort: 19134  # コンテナ側の 19133 に転送！
       nodePort: 30000    # 外部公開ポート (ルーター設定用)
 
 ---
@@ -64,9 +64,14 @@ spec:
           
           # 【重要】コンテナ側のポート設定
           ports:
-            - containerPort: 19133 # [DEV] ServiceのtargetPortと一致させる
-              protocol: UDP
-              name: bedrock-udp
+            - # IPv4用ポート (メイン)
+            - name: SERVER_PORT
+              value: "19134"
+            
+            # IPv6用ポート (衝突しないようにズラす！)
+            - name: SERVER_PORT_V6
+              value: "19135"  # <--- ここを修正！
+              
             - containerPort: 4711  # RCON用
               protocol: TCP
               name: rcon-tcp
@@ -83,8 +88,6 @@ spec:
             
             # 【重要】マイクラ本体に「19133で起動せよ」と命令
             - name: SERVER_PORT
-              value: "19133"
-            - name: SERVER_PORT_V6
               value: "19133"
 
             # RCON設定 (自動アプデスクリプト用)
