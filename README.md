@@ -2,7 +2,7 @@
 
 ## **Secure On-Premise Operations with Cloud-Native Agility**
 
-### **📖 エグゼクティブサマリー (Executive Summary)**
+### **📖プロジェクト概要 (Executive Summary)**
 
 本プロジェクトは、製造業や重要インフラにおける\*\*「IT/OT融合（IT-OT Convergence）」\*\*を想定した、技術実証ポートフォリオです。
 
