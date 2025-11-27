@@ -1,0 +1,58 @@
+---
+- name: Setup Dev Workstation (code-server)
+  hosts: dev_workstation
+  become: true
+  tasks:
+    # 1. 基本ツールのインストール
+    - name: Install basic tools
+      apt:
+        name: ["curl", "git", "wget", "unzip", "software-properties-common", "build-essential"]
+        state: present
+        update_cache: yes
+
+    # 2. code-server のインストール
+    - name: Install code-server
+      shell: curl -fsSL https://code-server.dev/install.sh | sh
+      args:
+        creates: /usr/bin/code-server
+
+    - name: Enable code-server service
+      systemd:
+        name: code-server@tagomori
+        enabled: yes
+        state: started
+
+    # 3. 外部アクセス許可 (config.yaml書き換え)
+    - name: Allow external access for code-server
+      lineinfile:
+        path: /home/tagomori/.config/code-server/config.yaml
+        regexp: '^bind-addr:'
+        line: 'bind-addr: 0.0.0.0:8080'
+        create: yes
+        owner: tagomori
+        group: tagomori
+      notify: Restart code-server
+
+    # 4. Docker のインストール (以前のPlaybookを流用可能だが今回は簡略記述)
+    - name: Install Docker
+      shell: curl -fsSL https://get.docker.com | sh
+      args:
+        creates: /usr/bin/docker
+
+    - name: Add user to docker group
+      user:
+        name: tagomori
+        groups: docker
+        append: yes
+
+    # 5. Tailscale のインストール
+    - name: Install Tailscale
+      shell: curl -fsSL https://tailscale.com/install.sh | sh
+      args:
+        creates: /usr/bin/tailscale
+
+  handlers:
+    - name: Restart code-server
+      systemd:
+        name: code-server@tagomori
+        state: restarted

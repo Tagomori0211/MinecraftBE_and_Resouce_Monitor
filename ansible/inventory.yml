@@ -14,5 +14,11 @@ all:
     # ----------------------------
     mcbe_server_vm:
       hosts:
-        192.168.0.20:
+        192.168.0.22:
+          ansible_user: tagomori
+
+# 【追加】新しい開発機
+    dev_workstation:
+      hosts:
+        192.168.0.22:
           ansible_user: tagomori
