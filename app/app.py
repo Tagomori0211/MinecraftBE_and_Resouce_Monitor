@@ -72,6 +72,7 @@ def get_status():
         status = "Online"
         players_online = int(online_res['value'][1])
     
+    
     if max_res:
         players_max = int(max_res['value'][1])
 
