@@ -20,7 +20,7 @@ spec:
           name: http
         args:
           - -housekeeping_interval=10s
-          - -docker_only=true # Docker/Containerdのコンテナだけ見る
+          #- -docker_only=true # Docker/Containerdのコンテナだけ見る
         volumeMounts:
         # ホストマシンの重要ディレクトリを覗き見るためのマウント
         - name: rootfs
