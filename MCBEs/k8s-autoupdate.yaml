@@ -46,42 +46,42 @@ metadata:
   name: update-script
   namespace: default
 data:
+  # この内容はコンテナ内の /scripts/check_and_update.sh として実体化されるよ！
   check_and_update.sh: |
     #!/bin/bash
     set -e
     
     # ターゲット設定
     DEPLOYMENT="mc-bedrock"
-    CONTAINER="minecraft" # Deployment内のコンテナ名
+    CONTAINER="minecraft"
     
-    # 最新バージョンの取得 (User-Agent偽装)
-    # ※シンプル化のため、公式サイトからバージョン文字列を取得する簡易ロジック
-    # 実際はitzgイメージの更新を待つのが安全だけど、ここでは「再起動してイメージプルさせる」戦略をとるね
-    
-    echo "🔍 Checking for updates..."
+    echo "⏰ Daily Maintenance Job Started..."
     
     # Pod名を取得
     POD_NAME=$(kubectl get pods -l app=minecraft-bedrock -o jsonpath="{.items[0].metadata.name}")
     
     if [ -z "$POD_NAME" ]; then
-      echo "❌ Minecraft pod not found."
+      echo "❌ Minecraft pod not found. Skipping."
       exit 1
     fi
 
-    # RCONで通知 (kubectl execを使用)
-    echo "📢 Sending daily restart notification..."
-    kubectl exec $POD_NAME -c $CONTAINER -- rcon-cli say "§e[System] §b定期メンテナンスの時間です。"
-    kubectl exec $POD_NAME -c $CONTAINER -- rcon-cli say "§e[System] §fアップデート確認のため、1分後に再起動します。"
+    # RCONでユーザーに通知 (いきなり落ちたら困るからね！)
+    echo "📢 Sending notification via RCON..."
+    kubectl exec $POD_NAME -c $CONTAINER -- rcon-cli say "§e[System] §bDaily Maintenance starting in 60 seconds."
+    kubectl exec $POD_NAME -c $CONTAINER -- rcon-cli say "§e[System] §fServer will restart to check for updates."
     
+    # 60秒待つ
     sleep 60
     
     kubectl exec $POD_NAME -c $CONTAINER -- rcon-cli say "§e[System] §cRebooting now..."
     
-    # Rollout Restart (これで新しいイメージがあれば取得される)
+    # Rollout Restart
+    # これを実行すると、新しいPodが作られ、その起動時にitzgイメージが
+    # 自動的に最新バージョンをチェック＆ダウンロードしてくれる！
     echo "🔄 Triggering rollout restart..."
     kubectl rollout restart deployment/$DEPLOYMENT
     
-    echo "✅ Restart command sent."
+    echo "✅ Maintenance restart triggered successfully."
 
 ---
 # ---------------------------------------------------------
@@ -93,17 +93,21 @@ metadata:
   name: minecraft-auto-updater
   namespace: default
 spec:
-  # 毎日 朝4時 (JSTなら前日の19:00 UTCだけど、サーバーのタイムゾーンによる)
-  # ここではサーバーがJST設定と仮定して "0 4 * * *"
+  # 【重要】JSTを指定！これでサーバーの時刻に関わらず日本時間で動く
+  timeZone: "Asia/Tokyo"
+  
+  # 日本時間の 朝4:00 に実行
   schedule: "0 4 * * *"
+  
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
       template:
         spec:
-          serviceAccountName: minecraft-updater # 権限を持ったユーザーを使う
+          serviceAccountName: minecraft-updater
           containers:
             - name: updater
-              # kubectl が入っている軽量イメージを使う
               image: bitnami/kubectl:latest
               command: ["/bin/bash", "/scripts/check_and_update.sh"]
               volumeMounts:
@@ -114,4 +118,4 @@ spec:
             - name: script-volume
               configMap:
                 name: update-script
-                defaultMode: 0755 # 実行権限をつける
+                defaultMode: 0755 # 実行権限を付与
