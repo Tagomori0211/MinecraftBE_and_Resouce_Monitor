@@ -81,6 +81,11 @@ services:
       - grafana_data:/var/lib/grafana
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=password123
+      # 1. サイトへの埋め込みを許可
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      # 2. 匿名アクセスを許可 (ログイン画面を出さないため)
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
     depends_on:
       - prometheus
     restart: unless-stopped
