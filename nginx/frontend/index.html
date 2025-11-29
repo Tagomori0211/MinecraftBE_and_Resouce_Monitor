@@ -1,201 +1,125 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minecraft Resource Monitor</title>
-    <style>
-        /* 全体のスタイル定義 */
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #2d2d2d; /* ダークモード背景 */
-            color: #ffffff;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
+# ---------------------------------------------------------
+# 1. 権限設定 (RBAC)
+# ---------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: minecraft-updater
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: minecraft-updater-role
+  namespace: default
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "patch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/exec"]
+    verbs: ["get", "list", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: minecraft-updater-binding
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: minecraft-updater
+    namespace: default
+roleRef:
+  kind: Role
+  name: minecraft-updater-role
+  apiGroup: rbac.authorization.k8s.io
 
-        /* ヘッダー部分 */
-        header {
-            text-align: center;
-            margin-bottom: 40px;
-        }
-        h1 { margin: 0; font-size: 2.5rem; color: #4CAF50; }
-        .subtitle { color: #aaaaaa; margin-top: 10px; }
+---
+# ---------------------------------------------------------
+# 2. スクリプト本体 (ConfigMap)
+# ---------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: update-script
+  namespace: default
+data:
+  check_and_update.sh: |
+    #!/bin/sh
+    set -e
+    
+    DEPLOYMENT="mc-bedrock"
+    
+    echo "🔧 Installing kubectl..."
+    apk add --no-cache curl
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    chmod +x kubectl
+    mv kubectl /usr/local/bin/
+    
+    echo "⏰ Daily Maintenance Job Started..."
+    
+    POD_NAME=$(kubectl get pods -l app=minecraft-bedrock -o jsonpath="{.items[0].metadata.name}")
+    
+    if [ -z "$POD_NAME" ]; then
+      echo "❌ Minecraft pod not found."
+      exit 1
+    fi
 
-        /* グリッドレイアウト (カードを並べる) */
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            width: 100%;
-            max-width: 1000px;
-        }
+    # ---------------------------------------------------------
+    # 関数: メッセージ送信 (PID特定 -> 標準入力へ書き込み)
+    # ---------------------------------------------------------
+    send_msg() {
+      MSG=$1
+      echo "📢 Sending: $MSG"
+      # プロセスID (PID) を /proc から探して、その標準入力 (fd/0) に echo を流し込む
+      kubectl exec $POD_NAME -c minecraft -- /bin/sh -c "for p in /proc/[0-9]*; do grep 'bedrock_server' \$p/cmdline >/dev/null 2>&1 && echo 'say $MSG' > \$p/fd/0 && break; done"
+    }
 
-        /* パネル（カード）のデザイン */
-        .card {
-            background: #111217;
-            padding: 15px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-            text-align: center;
-            transition: transform 0.2s;
-        }
-        .card:hover { transform: translateY(-5px); } /* マウスホバーで少し浮く */
+    # 1. 予告通知
+    send_msg "§e[System] §bDaily Maintenance starting in 60 seconds."
+    send_msg "§e[System] §fServer will restart to check for updates."
+    
+    # 2. 待機
+    sleep 60
+    
+    # 3. 直前通知
+    send_msg "§e[System] §cRebooting now..."
+    
+    # 4. 再起動 (Rollout Restart)
+    echo "🔄 Triggering rollout restart..."
+    kubectl rollout restart deployment/$DEPLOYMENT
+    
+    echo "✅ Maintenance restart triggered successfully."
 
-        .card h2 { font-size: 1.2rem; color: #81C784; margin-bottom: 10px; }
-        .card .value { font-size: 2.5rem; font-weight: bold; margin: 10px 0; }
-        .card .unit { font-size: 1rem; color: #bbbbbb; }
-
-        /* ステータスランプ */
-        .status-indicator {
-            display: inline-block;
-            width: 15px;
-            height: 15px;
-            border-radius: 50%;
-            background-color: gray;
-            margin-right: 5px;
-        }
-        .status-online { background-color: #00E676; box-shadow: 0 0 10px #00E676; }
-        .status-offline { background-color: #F44336; }
-        
-        .chart-frame {
-            width: 100%;      /* 親要素(card)の幅いっぱいに広げる */
-            height: 150px;    /* 高さは固定でもOK (Gaugeなら少し低めがいいかも) */
-            border: none;     /* 枠線を消す */
-            margin-top: 10px;
-            overflow: hidden; /* スクロールバーを出さない */
-        }
-
-    </style>
-</head>
-<body>
-
-    <header>
-        <h1>⛏️ Minecraft Monitor 📊</h1>
-        <div class="subtitle">DevOps VM Dashboard (Managed by Flask)</div>
-    </header>
-
-    <div class="dashboard-grid">
-        
-        <div class="card">
-            <h2>Server Status</h2>
-            <div id="status-text" class="value">Loading...</div>
-            <div><span id="status-icon" class="status-indicator"></span> <span id="uptime">Checking...</span></div>
-        </div>
-
-        <div class="card">
-            <h2>Players Online</h2>
-            <div class="value"><span id="players-online">-</span> <span class="unit">/ <span id="players-max">-</span></span></div>
-            <div class="unit">Now/Max</div>
-        </div>
-
-        <div class="card">
-            <h2>CPU Usage</h2>
-            <div class="unit">Pod Resource</div>
-            
-            <iframe class="chart-frame" 
-                src="/grafana/d-solo/adxfmzb/iflame?orgId=1&from=now-5m&to=now&refresh=1s&panelId=1" 
-                width="100%" 
-                height="150" 
-                frameborder="0">
-            </iframe>
-        </div>
-
-        <div class="card">
-            <h2>Memory Usage</h2>
-            <div class="unit" id="mem-details">Checking Max...</div>
-            <div class="unit" id="mem-details">RAM Allocation</div>
-        
-            
-
-            <iframe class="chart-frame" 
-                src="/grafana/d-solo/adxfmzb/iflame?orgId=1&from=now-5m&to=now&refresh=1s&panelId=2" 
-                width="100%" 
-                height="150" 
-                frameborder="0">
-            </iframe>
-        </div>
-
-        <div class="card">
-            <h2>Network In</h2>
-            <div class="unit">Traffic Receive</div>
-            
-            <iframe class="chart-frame" 
-                src="/grafana/d-solo/adxfmzb/iflame?orgId=1&timezone=browser&showCategory=Thresholds&panelId=panel-3&__feature.dashboardSceneSolo=true" 
-                width="100%" 
-                height="150" 
-                frameborder="0">
-            </iframe>
-        </div>
-
-        <div class="card">
-            <h2>Network Out</h2>
-            <div class="unit">Traffic Transmit</div>
-            
-            <iframe class="chart-frame" 
-                src="/grafana/d-solo/adxfmzb/iflame?orgId=1&timezone=browser&showCategory=Thresholds&panelId=panel-4&__feature.dashboardSceneSolo=true"
-                width="100%" 
-                height="150" 
-                frameborder="0">
-            </iframe>
-            
-        </div>
-
-    </div>
-
-    <script>
-        // APIからデータを取得して画面を更新する関数
-        async function fetchStats() {
-            try {
-                // FlaskのAPIを叩く (/api/はNginxでFlaskに転送される設定済み)
-                const response = await fetch('/api/status');
-                const data = await response.json();
-
-                // 1. ステータス表示更新
-                const statusText = document.getElementById('status-text');
-                const statusIcon = document.getElementById('status-icon');
-                const uptimeElement = document.getElementById('uptime');
-
-                statusText.textContent = data.status;
-                if (data.status === "Online") {
-                    statusText.style.color = "#00E676";
-                    statusIcon.className = "status-indicator status-online";
-                    // バージョン情報を表示！
-                    uptimeElement.textContent = "Ver: " + data.server.version; 
-                } else {
-                    statusText.style.color = "#F44336";
-                    statusIcon.className = "status-indicator status-offline";
-                    uptimeElement.textContent = "Checking...";
-                }
-
-                // 2. プレイヤー数更新
-                document.getElementById('players-online').textContent = data.players.online;
-                document.getElementById('players-max').textContent = data.players.max;
-
-                const memDetails = document.getElementById('mem-details');
-                    if (data.server.memory_limit !== "N/A") {
-                    // "Limit: 4.0 GB" のように固定情報を表示
-                        memDetails.textContent = "Limit: " + data.server.memory_limit;
-                        memDetails.style.color = "#81C784"; 
-                    } else {
-                        memDetails.textContent = "Checking Limit...";
-                        memDetails.style.color = "#bbbbbb";
-                }
-
-            } catch (error) {
-                console.error("データの取得に失敗しました:", error);
-                document.getElementById('status-text').textContent = "Error";
-            }
-        }
-
-        // ページ読み込み時に1回実行
-        fetchStats();
-
-        // その後は5秒ごとに自動更新 (リアルタイム感！)
-        setInterval(fetchStats, 5000);
-    </script>
-</body>
-</html>
+---
+# ---------------------------------------------------------
+# 3. CronJob (スケジュール実行)
+# ---------------------------------------------------------
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: minecraft-auto-updater
+  namespace: default
+spec:
+  timeZone: "Asia/Tokyo"
+  schedule: "0 4 * * *" # 毎日 朝4:00 (JST)
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: minecraft-updater
+          containers:
+            - name: updater
+              image: alpine:latest
+              command: ["/bin/sh", "/scripts/check_and_update.sh"]
+              volumeMounts:
+                - name: script-volume
+                  mountPath: /scripts
+          restartPolicy: OnFailure
+          volumes:
+            - name: script-volume
+              configMap:
+                name: update-script
+                defaultMode: 0755
