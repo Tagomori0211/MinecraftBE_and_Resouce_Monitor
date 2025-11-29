@@ -11,7 +11,7 @@ PROMETHEUS_URL = "http://prometheus:9090"
 
 # マイクラサーバーの接続情報 (DevOps VMから見たIP)
 MC_SERVER_IP = "192.168.0.20"
-MC_SERVER_PORT = 19134
+MC_SERVER_PORT = 30000
 
 def query_prometheus(query):
     """
