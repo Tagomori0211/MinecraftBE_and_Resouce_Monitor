@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: log-watcher
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: log-watcher
+  template:
+    metadata:
+      labels:
+        app: log-watcher
+    spec:
+      serviceAccountName: log-watcher-sa # さっき作った権限を使う！
+      containers:
+        - name: watcher
+          image: python:3.9-slim # 本当は自作イメージビルドが必要
+          # 簡易的にコンテナ起動時にライブラリ入れて実行させる例
+          # 本番ではDockerfileでビルド済みイメージを使ってね！
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              pip install kubernetes requests &&
+              python -u /scripts/log_watcher.py
+          volumeMounts:
+            - name: script-vol
+              mountPath: /scripts
+      volumes:
+        - name: script-vol
+          configMap:
+            name: log-watcher-script # PythonコードをConfigMap化してマウント
