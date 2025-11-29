@@ -2,8 +2,6 @@ version: '3.8'
 
 services:
   # Database Service
-
-  
   db:
     container_name: db-postgres
     image: postgres:13
@@ -12,6 +10,9 @@ services:
       POSTGRES_DB: minecraft_resources
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
+      # 【追加】DBのタイムゾーン設定
+      TZ: Asia/Tokyo
+      PGTZ: Asia/Tokyo
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d
@@ -25,6 +26,8 @@ services:
     environment:
       DATABASE_URL: postgresql://user:password@db:5432/minecraft_resources
       FLASK_ENV: development
+      # 【追加】
+      TZ: Asia/Tokyo
     volumes:
       - ./minecraft_backups:/app/minecraft_backups
     depends_on:
@@ -40,8 +43,9 @@ services:
     command: gunicorn --config gunicorn_config.py app:app
     environment:
       DATABASE_URL: postgresql://user:password@db:5432/minecraft_resources
-      # GitHub Secretsから注入される環境変数を読み込む
-      FLASK_APP_SECRET_KEY: ${FLASK_APP_SECRET_KEY} 
+      FLASK_APP_SECRET_KEY: ${FLASK_APP_SECRET_KEY}
+      # 【追加】
+      TZ: Asia/Tokyo
     depends_on:
       - db
 
@@ -53,12 +57,14 @@ services:
       dockerfile: Dockerfile_nginx
     restart: unless-stopped
     ports:
-      - "80:80"   # HTTP
-      - "443:443" # HTTPS
+      - "80:80"
+      - "443:443"
+    environment:
+      # 【追加】
+      TZ: Asia/Tokyo
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d
       - ./nginx/frontend:/var/www/html
-      # 【重要修正】証明書を絶対パスでマウント (デプロイ時の削除回避)
       - /home/tagomori/server_data/certbot/conf:/etc/letsencrypt
       - /home/tagomori/server_data/certbot/www:/var/www/certbot
     depends_on:
@@ -73,26 +79,27 @@ services:
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
+    environment:
+      # 【追加】
+      TZ: Asia/Tokyo
     restart: unless-stopped
 
   # Grafana
   grafana:
     image: grafana/grafana:latest
     container_name: monitoring-grafana
-    # ports:  <-- Nginx経由にするためポート公開は削除
-    #   - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=password123
-      # 埋め込み許可 & 匿名アクセス設定
       - GF_SECURITY_ALLOW_EMBEDDING=true
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
-      # サブパス設定 (Reverse Proxy用)
       - GF_SERVER_DOMAIN=tagomori-monitor.duckdns.org
       - GF_SERVER_ROOT_URL=https://tagomori-monitor.duckdns.org/grafana/
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      # 【追加】
+      TZ: Asia/Tokyo
     depends_on:
       - prometheus
     restart: unless-stopped
@@ -104,21 +111,22 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - TZ=Asia/Tokyo
+      - TZ=Asia/Tokyo # これは元々あり
       - SUBDOMAINS=tagomori-monitor
-      - TOKEN=${DUCKDNS_TOKEN} # .envから読み込み
+      - TOKEN=${DUCKDNS_TOKEN}
       - LOG_FILE=false
     restart: unless-stopped
 
-  # Certbot (SSL証明書管理)
+  # Certbot
   certbot:
     image: certbot/certbot
     container_name: certbot
+    environment:
+      # 【追加】
+      TZ: Asia/Tokyo
     volumes:
-      # 【重要修正】証明書を絶対パスでマウント
       - /home/tagomori/server_data/certbot/conf:/etc/letsencrypt
       - /home/tagomori/server_data/certbot/www:/var/www/certbot
-    # 証明書の自動更新チェック (12時間ごと)
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
 
 volumes:
