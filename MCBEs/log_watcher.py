@@ -10,6 +10,7 @@ from prometheus_client import start_http_server, Gauge
 # 1. Prometheus Metrics Definition
 # ---------------------------------------------------------
 # ユーザーのオンライン状態 (1: Online, 0: Offline)
+# これをGrafanaで可視化します
 PLAYER_ONLINE_STATUS = Gauge(
     'minecraft_player_online_status',
     'Current online status of the player (1 for online, 0 for offline)',
@@ -76,6 +77,7 @@ def watch_logs():
     w = watch.Watch()
     
     NAMESPACE = "default"
+    # Deploymentのラベルと一致させること
     POD_LABEL_SELECTOR = "app=minecraft-bedrock"
 
     print(f"🚀 Minecraft Log Exporter started.")
@@ -94,9 +96,14 @@ def watch_logs():
 
         try:
             # ストリーミング開始 (follow=True)
-            # _preload_content=False にすることで、行ごとに処理できるようにするらしいが
-            # watch.streamを使うのが一般的
-            for line in w.stream(v1.read_namespaced_pod_log, name=pod_name, namespace=NAMESPACE, follow=True):
+            # 【重要修正】ここで container="minecraft" を指定しないと、
+            # Pod内に複数コンテナ(minecraft + exporter)があるためエラー(400 Bad Request)になる
+            for line in w.stream(v1.read_namespaced_pod_log, 
+                               name=pod_name, 
+                               namespace=NAMESPACE, 
+                               container="minecraft", # <--- ここを追加しました！
+                               follow=True):
+                
                 log_line = line.strip()
                 
                 # 解析
