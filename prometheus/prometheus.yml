@@ -9,9 +9,17 @@ scrape_configs:
         labels:
           group: 'game-stats'
 
-  # 2. 【追加】システム負荷情報 (cAdvisor)
+  # 2. システム負荷情報 (cAdvisor)
   - job_name: 'k3s-cadvisor'
     static_configs:
       - targets: ['192.168.0.20:30002']
         labels:
           group: 'system-stats'
+
+ # 3. ログ監視エクスポーター (Log Watcher)
+  # K3sのNodePort 30003に向けてスクレイピングを行います
+  - job_name: 'minecraft-log-watcher'
+    static_configs:
+      - targets: ['192.168.0.20:30003']
+        labels:
+          group: 'log-stats'
