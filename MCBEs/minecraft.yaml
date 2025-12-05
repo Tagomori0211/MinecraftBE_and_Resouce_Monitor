@@ -35,7 +35,7 @@ spec:
 
 ---
 # ---------------------------------------------------------
-# 3. Deployment (Permissions Fix Added)
+# 3. Deployment
 # ---------------------------------------------------------
 apiVersion: apps/v1
 kind: Deployment
@@ -55,18 +55,18 @@ spec:
       labels:
         app: minecraft-bedrock
     spec:
-      # 【追加】InitContainer: メイン起動前に権限問題を解決する
+      # --- Init Container: 権限修正 ---
+      # (kubectl get podsには表示されませんが、裏で成功しています)
       initContainers:
         - name: fix-permissions
           image: busybox
-          # /data の所有者を UID:1000 (bedrock user) に変更
           command: ["sh", "-c", "chown -R 1000:1000 /data"]
           volumeMounts:
             - name: minecraft-data
               mountPath: /data
 
       containers:
-        # --- Main Container ---
+        # --- Main Container: Minecraft Bedrock ---
         - name: minecraft
           image: itzg/minecraft-bedrock-server:latest
           tty: true
@@ -91,10 +91,15 @@ spec:
             - name: minecraft-data
               mountPath: /data
 
-        # --- Sidecar Container ---
+        # --- Sidecar Container: Exporter (修正箇所) ---
         - name: exporter
           image: itzg/mc-monitor:latest
-          command: ["/mc-monitor", "export", "-servers", "localhost:19132"]
+          # 【修正】Bedrock専用のコマンドとフラグに変更
+          command: 
+            - "/mc-monitor"
+            - "export-for-prometheus"
+            - "-bedrock-servers"
+            - "localhost:19132"
           ports:
             - containerPort: 8080
               name: metrics
