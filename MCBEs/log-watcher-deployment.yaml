@@ -19,17 +19,26 @@ data:
         ['user_name']
     )
 
-    # --- Log Parsing Logic (Updated) ---
+    # --- Helper: Remove ANSI Color Codes ---
+    def strip_ansi_codes(text):
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        return ansi_escape.sub('', text)
+
+    # --- Log Parsing Logic (Robust Version) ---
     def parse_log_line(line):
-        # Format: Player connected: Name, xuid: ...
-        login_pattern = r"Player connected: (.+), xuid"
-        logout_pattern = r"Player disconnected: (.+), xuid"
+        # 1. 色コードを除去してきれいなテキストにする
+        clean_line = strip_ansi_codes(line)
         
-        match_login = re.search(login_pattern, line)
+        # 2. 判定 (空白のゆらぎを許容する \s* を使用)
+        # Target: "Player connected: Shinari5295, xuid:..."
+        login_pattern = r"Player connected:\s*(.+?),\s*xuid"
+        logout_pattern = r"Player disconnected:\s*(.+?),\s*xuid"
+        
+        match_login = re.search(login_pattern, clean_line)
         if match_login: 
             return 'LOGIN', match_login.group(1).strip()
         
-        match_logout = re.search(logout_pattern, line)
+        match_logout = re.search(logout_pattern, clean_line)
         if match_logout: 
             return 'LOGOUT', match_logout.group(1).strip()
         
@@ -57,7 +66,7 @@ data:
         NAMESPACE = "default"
         POD_LABEL_SELECTOR = "app=minecraft-bedrock"
 
-        print("🚀 Minecraft Log Exporter started on port 8000")
+        print("🚀 Minecraft Log Exporter started (DEBUG MODE)")
 
         while True:
             pod_name = get_minecraft_pod(v1, NAMESPACE, POD_LABEL_SELECTOR)
@@ -66,17 +75,22 @@ data:
                 time.sleep(10)
                 continue
 
-            print(f"TARGET POD: {pod_name}. Streaming...")
+            print(f"TARGET POD: {pod_name}. Streaming logs...")
             try:
-                # 【重要】コンテナ名 "minecraft" を指定
+                # コンテナ名を指定してストリーミング
                 for line in w.stream(v1.read_namespaced_pod_log, name=pod_name, namespace=NAMESPACE, container="minecraft", follow=True):
+                    # 【デバッグ用】受け取った生ログを強制出力（これで何も出なければK8s側の問題）
+                    print(f"[RAW] {line.strip()}")
+                    
                     event, user = parse_log_line(line.strip())
+                    
                     if event == 'LOGIN':
-                        print(f"✅ LOGIN: {user}")
+                        print(f"✅ LOGIN DETECTED: {user}")
                         PLAYER_ONLINE_STATUS.labels(user_name=user).set(1)
                     elif event == 'LOGOUT':
-                        print(f"🚪 LOGOUT: {user}")
+                        print(f"🚪 LOGOUT DETECTED: {user}")
                         PLAYER_ONLINE_STATUS.labels(user_name=user).set(0)
+                        
             except Exception as e:
                 print(f"⚠️ Stream Error: {e}. Reconnecting...")
                 time.sleep(5)
@@ -101,11 +115,11 @@ spec:
       labels:
         app: log-watcher
     spec:
-      serviceAccountName: log-watcher-sa # RBAC必須
+      serviceAccountName: log-watcher-sa
       containers:
         - name: log-watcher
           image: python:3.9-slim
-          # ライブラリインストールとスクリプト実行
+          # 標準出力のバッファリングを無効化 (-u)
           command: ["/bin/sh", "-c"]
           args: ["pip install --no-cache-dir kubernetes prometheus-client && python -u /app/main.py"]
           ports:
