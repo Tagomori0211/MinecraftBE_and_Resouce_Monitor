@@ -72,27 +72,26 @@ data:
                 time.sleep(10)
                 continue
 
+            # 【目印】このメッセージが出れば新しいコードです
             print(f"TARGET POD: {pod_name}. Connecting to stream...")
             
             try:
-                # 【修正】watchを使わず、responseオブジェクトを直接反復処理する
-                # _preload_content=False にすることで、行ごとのイテレータを取得
+                # _preload_content=False でバッファリング回避
+                # tail_lines=1 で接続時に直近のログを1行取得（生存確認用）
                 resp = v1.read_namespaced_pod_log(
                     name=pod_name,
                     namespace=NAMESPACE,
                     container="minecraft",
                     follow=True,
+                    tail_lines=1,
                     _preload_content=False
                 )
                 
-                # ストリームから1行ずつ読み出し
                 for line_bytes in resp:
                     if not line_bytes: continue
+                    line = line_bytes.decode('utf-8', errors='ignore').strip()
                     
-                    # bytes -> string
-                    line = line_bytes.decode('utf-8').strip()
-                    
-                    # Debug出力 (確認後、うるさければコメントアウト可)
+                    # [RAW]ログを表示（これが出れば疎通OK）
                     print(f"[RAW] {line}")
 
                     event, user = parse_log_line(line)
@@ -131,7 +130,7 @@ spec:
       containers:
         - name: log-watcher
           image: python:3.9-slim
-          # バッファリング無効化
+          # python -u で標準出力バッファリングを無効化
           command: ["/bin/sh", "-c"]
           args: ["pip install --no-cache-dir kubernetes prometheus-client && python -u /app/main.py"]
           ports:

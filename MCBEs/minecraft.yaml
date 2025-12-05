@@ -34,13 +34,13 @@ spec:
               value: "survival"
             - name: DIFFICULTY
               value: "hard"
-            # TZ環境変数だけでなく、ローカルタイムファイルもマウントする
+            # JST設定 (環境変数)
             - name: TZ
               value: "Asia/Tokyo"
           volumeMounts:
             - name: minecraft-data
               mountPath: /data
-            # 【追加】ホストの時間を同期
+            # 【重要】JST設定 (ホスト時刻のマウント)
             - name: host-time
               mountPath: /etc/localtime
               readOnly: true
@@ -57,7 +57,6 @@ spec:
           env:
             - name: TZ
               value: "Asia/Tokyo"
-          # 【追加】ExporterもJST化しておくと安心
           volumeMounts:
             - name: host-time
               mountPath: /etc/localtime
@@ -67,8 +66,38 @@ spec:
         - name: minecraft-data
           persistentVolumeClaim:
             claimName: minecraft-pvc
-        # 【追加】ホストの /etc/localtime を定義
+        # 【重要】ホスト側の時刻ファイル定義
         - name: host-time
           hostPath:
             path: /etc/localtime
             type: File
+---
+# Service定義は変更なしですが、apply時にエラーが出ないよう念のため含めておきます
+apiVersion: v1
+kind: Service
+metadata:
+  name: mc-bedrock-svc-game
+spec:
+  selector:
+    app: minecraft-bedrock
+  type: NodePort
+  ports:
+    - protocol: UDP
+      port: 19132
+      targetPort: 19132
+      nodePort: 30000
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mc-bedrock-svc-metrics
+spec:
+  selector:
+    app: minecraft-bedrock
+  type: NodePort
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+      nodePort: 30001
