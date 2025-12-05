@@ -55,7 +55,7 @@ spec:
       labels:
         app: minecraft-bedrock
     spec:
-      # --- Init Container ---
+      # --- Init Container: 権限修正 ---
       initContainers:
         - name: fix-permissions
           image: busybox
@@ -65,13 +65,14 @@ spec:
               mountPath: /data
 
       containers:
-        # --- Main Container ---
+        # --- Main Container: Minecraft Bedrock ---
         - name: minecraft
           image: itzg/minecraft-bedrock-server:latest
           tty: true
           stdin: true
           ports:
-            - containerPort: 19132
+            # 【修正】コンテナポートを 19134 に変更
+            - containerPort: 19134
               protocol: UDP
           env:
             - name: EULA
@@ -84,21 +85,27 @@ spec:
               value: "20"
             - name: SERVER_NAME
               value: "Tagomori-Server"
+            # 【重要】サーバーポートを 19134 に指定
+            - name: SERVER_PORT
+              value: "19134"
+            # IPv6を無効化しIPv4のみでバインドさせる（監視安定化のため）
+            - name: SERVER_PORT_V6
+              value: "19135" 
             - name: TZ
               value: "Asia/Tokyo"
           volumeMounts:
             - name: minecraft-data
               mountPath: /data
 
-        # --- Sidecar Container: Exporter (修正箇所) ---
+        # --- Sidecar Container: Exporter ---
         - name: exporter
           image: itzg/mc-monitor:latest
           command: 
             - "/mc-monitor"
             - "export-for-prometheus"
             - "-bedrock-servers"
-            # 【修正】localhost -> 127.0.0.1 に変更してIPv4を強制
-            - "127.0.0.1:19132"
+            # 【修正】127.0.0.1 かつ ポート 19134 を監視
+            - "127.0.0.1:19134"
           ports:
             - containerPort: 8080
               name: metrics
@@ -125,8 +132,10 @@ spec:
   type: NodePort
   ports:
     - protocol: UDP
-      port: 19132
-      targetPort: 19132
+      # Serviceとしてのポートも 19134 に合わせる
+      port: 19134
+      targetPort: 19134
+      # 外部公開ポートは 30000 のままでOK（外からは変わらずアクセス可能）
       nodePort: 30000
 
 ---
