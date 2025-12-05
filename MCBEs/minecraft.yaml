@@ -10,7 +10,7 @@ spec:
     matchLabels:
       app: minecraft-bedrock
   strategy:
-    type: RollingUpdate
+    type: Recreate
   template:
     metadata:
       labels:
@@ -33,12 +33,12 @@ spec:
             - name: GAMEMODE
               value: "survival"
             - name: DIFFICULTY
-              value: "hard"
-            # 【重要】満員エラー対策：最大プレイヤー数を明示的に20人に設定
+              value: "easy"
+            # 【重要】満員エラー対策：最大プレイヤー数を明示的に25人に設定
             - name: MAX_PLAYERS
-              value: "20"
+              value: "25"
             - name: SERVER_NAME
-              value: "Tagomori-Server"
+              value: "tagomori-Server"
             # 【修正】JST化：マウントを外し、この変数に任せる
             - name: TZ
               value: "Asia/Tokyo"
